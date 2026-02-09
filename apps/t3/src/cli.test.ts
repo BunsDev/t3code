@@ -80,6 +80,12 @@ describe("parseCliOptions", () => {
     );
   });
 
+  it("throws for invalid environment port values", () => {
+    expect(() => parseCliOptions([], { T3_WEB_PORT: "nope" }, "/workspace")).toThrow(
+      "Invalid value for T3_WEB_PORT",
+    );
+  });
+
   it("throws for unknown arguments", () => {
     expect(() => parseCliOptions(["--wat"], {}, "/workspace")).toThrow(
       "Unknown argument: --wat",

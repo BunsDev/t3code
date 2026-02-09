@@ -11,19 +11,6 @@ const DEFAULT_BACKEND_PORT = 4317;
 const DEFAULT_WEB_PORT = 4318;
 const DEFAULT_CLI_VERSION = "0.1.0";
 
-function parsePort(value: string | undefined, fallback: number): number {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return fallback;
-  }
-
-  return parsed;
-}
-
 function parseExplicitPort(value: string, key: string): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -31,6 +18,21 @@ function parseExplicitPort(value: string, key: string): number {
   }
 
   return parsed;
+}
+
+function parseEnvPort(
+  value: string | undefined,
+  key: string,
+  fallback: number,
+): { port: number; locked: boolean } {
+  if (!value) {
+    return { port: fallback, locked: false };
+  }
+
+  return {
+    port: parseExplicitPort(value, key),
+    locked: true,
+  };
 }
 
 interface CliOptions {
@@ -83,10 +85,17 @@ export function parseCliOptions(
   env: NodeJS.ProcessEnv,
   cwd: string,
 ): CliOptions {
-  let backendPort = parsePort(env.T3_BACKEND_PORT, DEFAULT_BACKEND_PORT);
-  let webPort = parsePort(env.T3_WEB_PORT, DEFAULT_WEB_PORT);
-  let backendPortLocked = Boolean(env.T3_BACKEND_PORT);
-  let webPortLocked = Boolean(env.T3_WEB_PORT);
+  const backendPortFromEnv = parseEnvPort(
+    env.T3_BACKEND_PORT,
+    "T3_BACKEND_PORT",
+    DEFAULT_BACKEND_PORT,
+  );
+  const webPortFromEnv = parseEnvPort(env.T3_WEB_PORT, "T3_WEB_PORT", DEFAULT_WEB_PORT);
+
+  let backendPort = backendPortFromEnv.port;
+  let webPort = webPortFromEnv.port;
+  let backendPortLocked = backendPortFromEnv.locked;
+  let webPortLocked = webPortFromEnv.locked;
   let launchCwd = cwd;
   let usedPositionalCwd = false;
   let noOpen = env.T3_NO_OPEN === "1";
