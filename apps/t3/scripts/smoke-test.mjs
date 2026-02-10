@@ -195,6 +195,13 @@ async function main() {
         )}.`,
       );
     }
+    if (!assetCacheControl.includes("max-age=31536000")) {
+      throw new Error(
+        `Smoke test failed: expected max-age=31536000 on built asset, got ${String(
+          assetResponse.headers.get("cache-control"),
+        )}.`,
+      );
+    }
     const missingAssetUrl = new URL("/assets/missing-bundle.js", parsedAppUrl);
     const missingAsset = await fetch(missingAssetUrl);
     if (missingAsset.status !== 404) {
