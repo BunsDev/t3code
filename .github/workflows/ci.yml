@@ -53,16 +53,50 @@ jobs:
           test -f apps/desktop/dist-electron/preload.js
           grep -nE "desktopBridge|getWsUrl|PICK_FOLDER_CHANNEL|wsUrl" apps/desktop/dist-electron/preload.js
 
+      - name: Install desktop runtime deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            xauth \
+            libgtk-3-0 \
+            libnotify4 \
+            libnss3 \
+            libxss1 \
+            libxtst6 \
+            libatspi2.0-0 \
+            libdrm2 \
+            libgbm1 \
+            libxrandr2 \
+            libxshmfence1 \
+            libxi6 \
+            xdg-utils
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
+
       - name: Desktop perf trace test
         if: github.event_name != 'pull_request'
+        env:
+          T3CODE_PERF_TIMEOUT_MS: "420000"
         run: xvfb-run -a bun run test:desktop-perf
 
       - name: Desktop perf trace test (fork PR)
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        env:
+          T3CODE_PERF_TIMEOUT_MS: "420000"
         run: xvfb-run -a bun run test:desktop-perf
 
       - name: Desktop perf trace test and PR summary
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
+          T3CODE_PERF_TIMEOUT_MS: "420000"
         run: xvfb-run -a bun run test:desktop-perf:post
+
+      - name: Upload desktop perf artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-perf-artifacts
+          path: /tmp/t3code-perf-artifacts
+          if-no-files-found: ignore

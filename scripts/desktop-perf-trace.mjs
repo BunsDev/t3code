@@ -339,6 +339,34 @@ async function waitForDoneFile(donePath, child, timeoutMs) {
   throw new Error(`Timed out waiting for done marker at ${donePath}`);
 }
 
+function tailLogText(logChunks, lineCount = 120) {
+  const lines = logChunks.join("").split(/\r?\n/);
+  return lines.slice(-lineCount).join("\n").trim();
+}
+
+function inferDesktopPerfTimeoutHint(logChunks) {
+  const joined = logChunks.join("");
+  const lowered = joined.toLowerCase();
+
+  if (lowered.includes("error while loading shared libraries")) {
+    return "Electron failed to start due missing Linux shared libraries.";
+  }
+  if (lowered.includes("no usable sandbox")) {
+    return "Electron sandbox failed to initialize in CI.";
+  }
+  if (lowered.includes("port is already in use")) {
+    return "Dev server port collision prevented Electron from loading the renderer.";
+  }
+  if (!joined.includes("[desktop-perf]")) {
+    return "Desktop perf automation never started; Electron likely did not boot successfully.";
+  }
+  if (joined.includes("[desktop-perf]") && !joined.includes("[desktop-perf] trace recorded")) {
+    return "Desktop perf automation started but did not complete trace recording.";
+  }
+
+  return "Desktop perf automation timed out before writing the done marker.";
+}
+
 async function terminateProcessTree(child) {
   if (child.exitCode !== null) return;
 
@@ -522,6 +550,19 @@ async function main() {
   let donePayload;
   try {
     donePayload = await waitForDoneFile(donePath, child, timeoutMs);
+  } catch (error) {
+    const baseMessage = error instanceof Error ? error.message : String(error);
+    const hint = inferDesktopPerfTimeoutHint(logs);
+    const logTail = tailLogText(logs);
+    throw new Error(
+      [
+        baseMessage,
+        `Hint: ${hint}`,
+        `Artifacts dir: ${artifactsDir}`,
+        `Run log: ${logPath}`,
+        logTail.length > 0 ? `Recent log tail:\n${logTail}` : "Recent log tail: <empty>",
+      ].join("\n"),
+    );
   } finally {
     await terminateProcessTree(child);
   }
