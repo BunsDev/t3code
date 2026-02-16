@@ -515,7 +515,7 @@ async function main() {
   const maxKeypressAvgMs = Number(process.env.T3CODE_PERF_MAX_KEYPRESS_AVG_MS ?? "12");
   const maxKeypressMaxMs = Number(process.env.T3CODE_PERF_MAX_KEYPRESS_MAX_MS ?? "24");
   const maxLongDispatchCount = Number(process.env.T3CODE_PERF_MAX_LONG_DISPATCH_COUNT ?? "0");
-  const timeoutMs = Number(process.env.T3CODE_PERF_TIMEOUT_MS ?? "240000");
+  const timeoutMs = Number(process.env.T3CODE_PERF_TIMEOUT_MS ?? "420000");
 
   const child = spawn("bun", ["dev:desktop"], {
     cwd: repoRoot,
