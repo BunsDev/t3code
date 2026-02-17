@@ -402,15 +402,29 @@ function buildPerfSeedState(): PerfPersistedState {
   };
 }
 
-async function seedRendererState(window: BrowserWindow, state: unknown): Promise<void> {
+async function seedRendererState(
+  window: BrowserWindow,
+  state: unknown,
+): Promise<{ projects: number; threads: number }> {
   const script = `
     (() => {
       const key = "t3code:renderer-state:v7";
       localStorage.setItem(key, JSON.stringify(${JSON.stringify(state)}));
-      return true;
+      let projects = -1;
+      let threads = -1;
+      try {
+        const persisted = JSON.parse(localStorage.getItem(key) ?? "null");
+        projects = Array.isArray(persisted?.projects) ? persisted.projects.length : 0;
+        threads = Array.isArray(persisted?.threads) ? persisted.threads.length : 0;
+      } catch {
+        projects = -1;
+        threads = -1;
+      }
+      window.location.reload();
+      return { projects, threads };
     })();
   `;
-  await window.webContents.executeJavaScript(script, true);
+  return window.webContents.executeJavaScript(script, true);
 }
 
 async function runRendererPerfInteractions(
@@ -1001,8 +1015,10 @@ export async function runDesktopPerfAutomation(window: BrowserWindow): Promise<v
       label: "initial load",
     });
     console.log("[desktop-perf] seeding renderer state");
-    await seedRendererState(window, seed.state);
-    window.webContents.reload();
+    const persistedCounts = await seedRendererState(window, seed.state);
+    console.log(
+      `[desktop-perf] seeded localStorage counts projects=${persistedCounts.projects} threads=${persistedCounts.threads}`,
+    );
     console.log("[desktop-perf] waiting for reload");
     await waitForDidFinishLoad(window.webContents, {
       timeoutMs: 60_000,
