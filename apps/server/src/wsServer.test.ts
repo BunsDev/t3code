@@ -1262,6 +1262,78 @@ describe("WebSocket Server", () => {
     }
   });
 
+  it("returns errors when strict read-pilot mode disables delegate fallback", async () => {
+    const stateDir = makeTempDir("t3code-ws-read-pilot-strict-state-");
+    const projectCwd = makeTempDir("t3code-ws-read-pilot-strict-project-");
+    const persistenceService = new PersistenceService({
+      dbPath: path.join(stateDir, "state.sqlite"),
+      legacyProjectsJsonPath: path.join(stateDir, "projects.json"),
+    });
+    const legacy = new LegacyStateSyncEngine({ persistenceService });
+    const failingMirror = {
+      mirrorStateEvent: vi.fn(async () => undefined),
+      dispose: vi.fn(async () => undefined),
+      debugReadSnapshot: vi.fn(() => {
+        throw new Error("strict mirror bootstrap failed");
+      }),
+      debugCatchUp: vi.fn(() => {
+        throw new Error("strict mirror catch-up failed");
+      }),
+      debugListMessages: vi.fn(() => {
+        throw new Error("strict mirror listMessages failed");
+      }),
+    } as unknown as LiveStoreStateMirror;
+    const readPilot = new LiveStoreReadPilotStateSyncEngine({
+      delegate: legacy,
+      mirror: failingMirror,
+      disableDelegateReadFallback: true,
+    });
+
+    try {
+      server = createTestServer({
+        cwd: "/test",
+        stateSyncEngine: readPilot,
+      });
+      await server.start();
+      const addr = server.httpServer.address();
+      const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+      const ws = await connectWs(port);
+      connections.push(ws);
+      await waitForMessage(ws);
+
+      const addedProject = await sendRequest(ws, WS_METHODS.projectsAdd, { cwd: projectCwd });
+      expect(addedProject.error).toBeUndefined();
+      const projectId = (addedProject.result as { project: { id: string } }).project.id;
+
+      const createdThread = await sendRequest(ws, WS_METHODS.threadsCreate, {
+        projectId,
+        title: "Read pilot strict thread",
+        model: "gpt-5.3-codex",
+      });
+      expect(createdThread.error).toBeUndefined();
+      const threadId = (createdThread.result as { thread: { id: string } }).thread.id;
+
+      const bootstrap = await sendRequest(ws, WS_METHODS.stateBootstrap);
+      expect(bootstrap.result).toBeUndefined();
+      expect(bootstrap.error?.message).toContain("strict mirror bootstrap failed");
+
+      const catchUp = await sendRequest(ws, WS_METHODS.stateCatchUp, { afterSeq: 0 });
+      expect(catchUp.result).toBeUndefined();
+      expect(catchUp.error?.message).toContain("strict mirror catch-up failed");
+
+      const listMessages = await sendRequest(ws, WS_METHODS.stateListMessages, {
+        threadId,
+        offset: 0,
+        limit: 10,
+      });
+      expect(listMessages.result).toBeUndefined();
+      expect(listMessages.error?.message).toContain("strict mirror listMessages failed");
+    } finally {
+      readPilot.close();
+    }
+  });
+
   it("broadcasts ordered state.event pushes", async () => {
     const stateDir = makeTempDir("t3code-ws-state-events-");
     const projectCwd = makeTempDir("t3code-ws-state-events-project-");
