@@ -101,6 +101,23 @@ T3 Code has a global runtime mode switch in the chat toolbar:
 - **Full access** (default): starts sessions with `approvalPolicy: never` and `sandboxMode: danger-full-access`.
 - **Supervised**: starts sessions with `approvalPolicy: on-request` and `sandboxMode: workspace-write`, then prompts in-app for command/file approvals.
 
+## Sync engine migration modes
+
+The server supports feature-flagged sync-engine modes while migrating from the legacy in-house state sync pipeline to LiveStore.
+
+- `T3CODE_SYNC_ENGINE_MODE=legacy` (default)
+  - Uses the existing `PersistenceService`-backed state sync engine for reads and writes.
+- `T3CODE_SYNC_ENGINE_MODE=shadow`
+  - Keeps legacy state as canonical, but mirrors committed `state.event` traffic into a LiveStore shadow store for parity validation.
+- `T3CODE_SYNC_ENGINE_MODE=livestore-read-pilot`
+  - Uses the LiveStore mirror for `state.bootstrap`, `state.catchUp`, and `state.listMessages` reads when available.
+  - Automatically falls back to legacy reads if the mirror is unavailable or errors.
+
+Optional diagnostics:
+
+- `T3CODE_LIVESTORE_BOOTSTRAP_PARITY_CHECK=1`
+  - In `livestore-read-pilot` mode, compares LiveStore vs legacy `state.bootstrap` snapshots and logs drift diagnostics.
+
 ## Provider architecture
 
 The web app communicates with the server via WebSocket using a simple JSON-RPC-style protocol:
