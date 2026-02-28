@@ -14,7 +14,6 @@ const MODE_ARGS = {
     "--ui=tui",
     "--filter=@t3tools/contracts",
     "--filter=@t3tools/web",
-    "--filter=@t3tools/desktop",
     "--filter=t3",
     "--parallel",
   ],
