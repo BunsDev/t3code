@@ -17,7 +17,7 @@ import {
   type ProviderTurnStartResult,
 } from "@t3tools/contracts";
 import type * as NodeServices from "@effect/platform-node/NodeServices";
-import { Effect, Exit, ServiceMap, Scope, Stream } from "effect";
+import { Cause, Effect, Exit, ServiceMap, Scope, Stream } from "effect";
 import type { ChildProcessSpawner } from "effect/unstable/process";
 import { makeRuntimeCommand, spawnManagedCommand } from "./processRunner";
 
@@ -566,8 +566,11 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
                     return;
                   }
 
+                  const squashed = Cause.squash(cause);
                   const message =
-                    cause instanceof Error ? cause.message : "codex app-server process errored.";
+                    squashed instanceof Error
+                      ? squashed.message
+                      : "codex app-server process errored.";
                   this.updateSession(context, {
                     status: "error",
                     activeTurnId: undefined,
