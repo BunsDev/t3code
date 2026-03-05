@@ -364,14 +364,18 @@ export function spawnDetachedProcess(
     });
 
     const handleSpawn = () => {
+      child.removeListener("error", handleError);
       child.unref();
       resolve();
     };
 
-    child.once("spawn", handleSpawn);
-    child.once("error", (error) => {
+    const handleError = (error: Error) => {
+      child.removeListener("spawn", handleSpawn);
       reject(normalizeSpawnError(command, args, error));
-    });
+    };
+
+    child.once("spawn", handleSpawn);
+    child.once("error", handleError);
   });
 }
 
