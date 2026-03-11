@@ -77,6 +77,7 @@ import { expandHomePath } from "./os-jank.ts";
 import { makeServerPushBus } from "./wsServer/pushBus.ts";
 import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
+import { tryHandleHttpRouterRequest } from "./httpRouter";
 
 const isServerNotRunningError = (error: Error): boolean => {
   const maybeCode = (error as NodeJS.ErrnoException).code;
@@ -418,6 +419,10 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
   // HTTP server — serves static files or redirects to Vite dev server
   const httpServer = http.createServer((req, res) => {
+    if (tryHandleHttpRouterRequest(req, res)) {
+      return;
+    }
+
     const respond = (
       statusCode: number,
       headers: Record<string, string>,

@@ -1,28 +1,24 @@
-import { Effect, Layer } from "effect";
-import { FetchHttpClient } from "effect/unstable/http";
+import * as Net from "node:net";
+import * as Http from "node:http";
 
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import { Effect, Layer } from "effect";
+import { HttpRouter } from "effect/unstable/http";
+
+import { ServerConfig } from "./config";
+import { makeRoutesLayer } from "./httpRouter";
 import { fixPath } from "./os-jank";
-import * as SqlitePersistence from "./persistence/Layers/Sqlite";
-import { ProviderHealthLive } from "./provider/Layers/ProviderHealth";
-import { makeServerProviderLayer, makeServerRuntimeServicesLayer } from "./serverLayers";
-import { ServerLoggerLive } from "./serverLogger";
-import { AnalyticsServiceLayerLive } from "./telemetry/Layers/AnalyticsService";
-import { OpenLive } from "./open";
-import { ServerLayer } from "./wsServer";
 
 export const makeServerLayer = Layer.unwrap(
   Effect.gen(function* () {
+    const config = yield* ServerConfig;
+    const listenOptions: Net.ListenOptions = config.host
+      ? { host: config.host, port: config.port }
+      : { port: config.port };
     yield* Effect.sync(fixPath);
-    return ServerLayer.pipe(
-      Layer.provideMerge(makeServerRuntimeServicesLayer()),
-      Layer.provideMerge(makeServerProviderLayer()),
-      Layer.provideMerge(ProviderHealthLive),
-      Layer.provideMerge(SqlitePersistence.layerConfig),
-      Layer.provideMerge(ServerLoggerLive),
-      Layer.provideMerge(AnalyticsServiceLayerLive),
-      Layer.provideMerge(OpenLive),
-      Layer.provideMerge(FetchHttpClient.layer),
-    );
+    return HttpRouter.serve(makeRoutesLayer, {
+      disableLogger: !config.logWebSocketEvents,
+    }).pipe(Layer.provide(NodeHttpServer.layer(Http.createServer, listenOptions)));
   }),
 );
 

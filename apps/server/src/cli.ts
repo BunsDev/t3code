@@ -185,11 +185,9 @@ const rootCommand = Command.make("t3", commandFlags).pipe(
   ),
 );
 
-const resetCommand = Command.make("reset", commandFlags).pipe(
+const resetCommand = Command.make("reset", {}).pipe(
   Command.withDescription("Reset the T3 Code server."),
-  Command.withHandler((flags) =>
-    Effect.flatMap(resolveServerConfig(flags), (_config) => Effect.die("Not implemented")),
-  ),
+  Command.withHandler(() => Effect.die("Not implemented")),
 );
 
 export const cli = rootCommand.pipe(Command.withSubcommands([resetCommand]));
