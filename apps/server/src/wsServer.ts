@@ -39,7 +39,6 @@ import {
   Result,
   Schema,
   Scope,
-  ServiceMap,
   Stream,
   Struct,
 } from "effect";
@@ -78,30 +77,6 @@ import { expandHomePath } from "./os-jank.ts";
 import { makeServerPushBus } from "./wsServer/pushBus.ts";
 import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
-
-/**
- * ServerShape - Service API for server lifecycle control.
- */
-export interface ServerShape {
-  /**
-   * Start HTTP and WebSocket listeners.
-   */
-  readonly start: Effect.Effect<
-    http.Server,
-    ServerLifecycleError,
-    Scope.Scope | ServerRuntimeServices | ServerConfig | FileSystem.FileSystem | Path.Path
-  >;
-
-  /**
-   * Wait for process shutdown signals.
-   */
-  readonly stopSignal: Effect.Effect<void, never>;
-}
-
-/**
- * Server - Service tag for HTTP/WebSocket lifecycle management.
- */
-export class Server extends ServiceMap.Service<Server, ServerShape>()("t3/wsServer/Server") {}
 
 const isServerNotRunningError = (error: Error): boolean => {
   const maybeCode = (error as NodeJS.ErrnoException).code;
@@ -156,6 +131,12 @@ function websocketRawToString(raw: unknown): string | null {
 function toPosixRelativePath(input: string): string {
   return input.replaceAll("\\", "/");
 }
+
+const isWildcardHost = (host: string | undefined): boolean =>
+  host === "0.0.0.0" || host === "::" || host === "[::]";
+
+const formatHostForUrl = (host: string): string =>
+  host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 
 function resolveWorkspaceWritePath(params: {
   workspaceRoot: string;
@@ -230,6 +211,31 @@ export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycl
 class RouteRequestError extends Schema.TaggedErrorClass<RouteRequestError>()("RouteRequestError", {
   message: Schema.String,
 }) {}
+
+const recordStartupHeartbeat = Effect.gen(function* () {
+  const analytics = yield* AnalyticsService;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+
+  const { threadCount, projectCount } = yield* projectionSnapshotQuery.getSnapshot().pipe(
+    Effect.map((snapshot) => ({
+      threadCount: snapshot.threads.length,
+      projectCount: snapshot.projects.length,
+    })),
+    Effect.catch((cause) =>
+      Effect.logWarning("failed to gather startup snapshot for telemetry", { cause }).pipe(
+        Effect.as({
+          threadCount: 0,
+          projectCount: 0,
+        }),
+      ),
+    ),
+  );
+
+  yield* analytics.record("server.boot.heartbeat", {
+    threadCount,
+    projectCount,
+  });
+});
 
 export const createServer = Effect.fn(function* (): Effect.fn.Return<
   http.Server,
@@ -602,7 +608,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const projectionReadModelQuery = yield* ProjectionSnapshotQuery;
   const checkpointDiffQuery = yield* CheckpointDiffQuery;
   const orchestrationReactor = yield* OrchestrationReactor;
-  const { openInEditor } = yield* Open;
+  const { openBrowser, openInEditor } = yield* Open;
 
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
@@ -699,6 +705,35 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     Effect.mapError((cause) => new ServerLifecycleError({ operation: "httpServerListen", cause })),
   );
   yield* readiness.markHttpListening;
+
+  if (!devUrl && !staticDir) {
+    yield* Effect.logWarning("web bundle missing and no VITE_DEV_SERVER_URL; web UI unavailable", {
+      hint: "Run `bun run --cwd apps/web build` or set VITE_DEV_SERVER_URL for dev mode.",
+    });
+  }
+
+  const localUrl = `http://localhost:${port}`;
+  const bindUrl =
+    host && !isWildcardHost(host) ? `http://${formatHostForUrl(host)}:${port}` : localUrl;
+  const { authToken: _authToken, devUrl: configDevUrl, ...safeConfig } = serverConfig;
+  yield* Effect.logInfo("T3 Code running", {
+    ...safeConfig,
+    devUrl: configDevUrl?.toString(),
+    authEnabled: Boolean(authToken),
+  });
+
+  if (!serverConfig.noBrowser) {
+    const target = configDevUrl?.toString() ?? bindUrl;
+    yield* openBrowser(target).pipe(
+      Effect.catch(() =>
+        Effect.logInfo("browser auto-open unavailable", {
+          hint: `Open ${target} in your browser.`,
+        }),
+      ),
+    );
+  }
+
+  yield* recordStartupHeartbeat;
 
   yield* Effect.addFinalizer(() =>
     Effect.all([closeAllClients, closeWebSocketServer.pipe(Effect.ignoreCause({ log: true }))]),
@@ -1000,7 +1035,4 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   return httpServer;
 });
 
-export const ServerLive = Layer.succeed(Server, {
-  start: createServer(),
-  stopSignal: Effect.never,
-} satisfies ServerShape);
+export const ServerLayer = Layer.effectDiscard(createServer());
